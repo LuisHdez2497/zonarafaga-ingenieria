@@ -69,16 +69,29 @@ stages:
   - stage: Seguridad
     displayName: Seguridad
     dependsOn: Calidad
+    condition: |
+      and(succeeded(),
+          or(ne(dependencies.Calidad.outputs['gates.alcance.hayPaquetes'], 'false'),
+             ne(dependencies.Calidad.outputs['gates.alcance.hayInfra'], 'false')))
     jobs:
       - job: sast
         displayName: Estático y dependencias
         timeoutInMinutes: 55
+        variables:
+          analizarCodigo: $[ stageDependencies.Calidad.gates.outputs['alcance.hayPaquetes'] ]
+          analizarInfra: $[ stageDependencies.Calidad.gates.outputs['alcance.hayInfra'] ]
         steps:
           - template: plantillas/seguridad.yml
+            parameters:
+              analizarCodigo: $(analizarCodigo)
+              analizarInfra: $(analizarInfra)
 
   - stage: Infraestructura
     displayName: Infraestructura
     dependsOn: Calidad
+    condition: |
+      and(succeeded(),
+          ne(dependencies.Calidad.outputs['gates.alcance.hayInfra'], 'false'))
     jobs:
       - job: terraform
         displayName: Validar y planificar

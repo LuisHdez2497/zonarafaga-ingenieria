@@ -18,18 +18,46 @@ steps:
         nx | "$(Agent.OS)"
       path: $(Build.SourcesDirectory)/.nx/cache
 
+  # Que se toca decide que corre. Un cambio que no roza Flutter no justifica
+  # descargar su SDK, y uno que no roza la infraestructura no justifica instalar
+  # Terraform ni Checkov: son minutos de agente gastados en verificar lo que nadie
+  # movio. Tocar el pipeline o el toolchain enciende todo, porque cambia la forma
+  # en que se verifica lo demas. Ver la regla 20.
   - script: |
       set -e
       BASE='${{ parameters.base }}'
       case "$BASE" in
         refs/heads/*) BASE="origin/${BASE#refs/heads/}" ;;
       esac
-      echo "base afectada: $BASE"
-      npx nx affected -t lint typecheck test build --base="$BASE" --head=HEAD
+      echo "##vso[task.setvariable variable=baseResuelta]$BASE"
+      CAMBIOS=$(git diff --name-only "$BASE" HEAD)
+      echo "archivos modificados:"
+      echo "$CAMBIOS" | sed 's/^/  /'
+      marca() { echo "$CAMBIOS" | grep -qE "$1" && echo true || echo false; }
+      TODO=$(marca '^(\.pipelines/|azure-pipelines\.yml|\.toolchain)')
+      if [ "$TODO" = true ]; then
+        FLUTTER=true; INFRA=true; PAQUETES=true
+      else
+        FLUTTER=$(marca '^apps/')
+        INFRA=$(marca '^infra/')
+        PAQUETES=$(marca '^(packages/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|nx\.json|tsconfig)')
+      fi
+      echo "alcance -> flutter=$FLUTTER  infra=$INFRA  paquetes=$PAQUETES"
+      echo "##vso[task.setvariable variable=hayFlutter]$FLUTTER"
+      echo "##vso[task.setvariable variable=hayFlutter;isOutput=true]$FLUTTER"
+      echo "##vso[task.setvariable variable=hayInfra;isOutput=true]$INFRA"
+      echo "##vso[task.setvariable variable=hayPaquetes;isOutput=true]$PAQUETES"
+    name: alcance
+    displayName: Alcance de los cambios
+
+  - script: |
+      set -e
+      npx nx affected -t lint typecheck test build --base="$(baseResuelta)" --head=HEAD
     displayName: Gates afectados (TypeScript)
 
   - task: Cache@2
     displayName: Caché del SDK de Flutter
+    condition: and(succeeded(), ne(variables['hayFlutter'], 'false'))
     inputs:
       key: 'flutter | "$(Agent.OS)" | "$(versionFlutter)"'
       path: $(Agent.ToolsDirectory)/flutter
@@ -46,6 +74,7 @@ steps:
       git config --global --add safe.directory "$DESTINO"
       echo "##vso[task.prependpath]$DESTINO/bin"
     displayName: Flutter $(versionFlutter)
+    condition: and(succeeded(), ne(variables['hayFlutter'], 'false'))
 
   - script: |
       set -e
@@ -56,9 +85,10 @@ steps:
       cd staff_app && dart run build_runner build --delete-conflicting-outputs && cd ..
       flutter analyze --fatal-infos --fatal-warnings
     displayName: Gates de Flutter
+    condition: and(succeeded(), ne(variables['hayFlutter'], 'false'))
 
   - script: |
       set -e
       cd apps/staff_app && flutter test --machine > $(Build.ArtifactStagingDirectory)/flutter-tests.json
     displayName: Pruebas de Flutter
-    condition: succeeded()
+    condition: and(succeeded(), ne(variables['hayFlutter'], 'false'))
