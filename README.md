@@ -25,12 +25,14 @@ entrega ese producto. No es el producto.
 | **Infraestructura como código** | [`infraestructura/`](infraestructura/) — siete módulos de Terraform reutilizables |
 | **Entrega automatizada con controles** | [`entrega/`](entrega/) — pipeline de cuatro etapas con análisis estático y revisión de infraestructura |
 | **Método y proceso formal** | [`estandares/`](estandares/) — resumen de los 28 estándares · [`documentos/`](documentos/) — el documento de plataforma |
+| **Desarrollo dirigido por especificación, con IA** | [`metodo/`](metodo/) — el ciclo completo: requisito, especificación, procedimiento y los guardrails que lo hacen fiable |
 
 ## Contenido
 
 ```
 decisiones/        Registros de decisión de arquitectura (ADR 0007–0012)
 estandares/        Resumen de los estándares de ingeniería
+metodo/            Desarrollo dirigido por especificación, asistido por IA
 infraestructura/   Módulos de Terraform: red, cómputo, base de datos, caché,
                    almacén, secretos, observabilidad y el stack que los compone
 entrega/           Pipeline de Azure DevOps y sus plantillas por etapa
