@@ -1,0 +1,7 @@
+# Versiones del toolchain. Fuente única: las lee el pipeline, el contenedor de
+# desarrollo y la skill onboard. Una versión que solo vive en un lugar se
+# desincroniza del resto sin que nadie se entere.
+NODE_VERSION=24
+PNPM_VERSION=10.12.2
+FLUTTER_VERSION=3.44.9
+TERRAFORM_VERSION=1.16.1

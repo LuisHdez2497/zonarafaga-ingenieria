@@ -1,0 +1,58 @@
+# Gates de calidad sobre lo afectado por el cambio. Un monorepo que reconstruye
+# entero en cada cambio deja de ser usable en cuanto crece.
+parameters:
+  - name: base
+    type: string
+
+steps:
+  - template: nodo.yml
+
+  - script: pnpm install --frozen-lockfile
+    displayName: Dependencias
+
+  - task: Cache@2
+    displayName: Caché de Nx
+    inputs:
+      key: 'nx | "$(Agent.OS)" | $(Build.SourceVersion)'
+      restoreKeys: |
+        nx | "$(Agent.OS)"
+      path: $(Build.SourcesDirectory)/.nx/cache
+
+  - script: |
+      set -e
+      npx nx affected -t lint typecheck test build --base=${{ parameters.base }} --head=HEAD
+    displayName: Gates afectados (TypeScript)
+
+  - task: Cache@2
+    displayName: Caché del SDK de Flutter
+    inputs:
+      key: 'flutter | "$(Agent.OS)" | $(versionFlutter)'
+      path: $(Agent.ToolsDirectory)/flutter
+
+  - script: |
+      set -e
+      DESTINO="$(Agent.ToolsDirectory)/flutter"
+      if [ ! -x "$DESTINO/bin/flutter" ]; then
+        curl -fsSL -o /tmp/flutter.tar.xz \
+          "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_$(versionFlutter)-stable.tar.xz"
+        mkdir -p "$(Agent.ToolsDirectory)"
+        tar -xJf /tmp/flutter.tar.xz -C "$(Agent.ToolsDirectory)"
+      fi
+      git config --global --add safe.directory "$DESTINO"
+      echo "##vso[task.prependpath]$DESTINO/bin"
+    displayName: Flutter $(versionFlutter)
+
+  - script: |
+      set -e
+      flutter --version
+      cd apps
+      dart pub get
+      dart format --set-exit-if-changed .
+      flutter analyze --fatal-infos --fatal-warnings
+    displayName: Gates de Flutter
+
+  - script: |
+      set -e
+      cd apps/staff_app && flutter test --machine > $(Build.ArtifactStagingDirectory)/flutter-tests.json
+    displayName: Pruebas de Flutter
+    condition: succeededOrFailed()

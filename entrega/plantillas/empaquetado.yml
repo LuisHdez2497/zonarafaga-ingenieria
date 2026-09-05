@@ -1,0 +1,66 @@
+# El artefacto se construye una vez y se promueve el mismo, identificado por
+# digest. Reconstruir por ambiente es desplegar algo distinto de lo verificado.
+# Y se escanea ANTES de publicar: una imagen vulnerable que ya está en el
+# registro es una imagen que alguien puede desplegar.
+parameters:
+  - name: registro
+    type: string
+  - name: servidor
+    type: string
+
+steps:
+  - script: |
+      set -e
+      VERSION=`node -p "require('./packages/api/package.json').version"`
+      echo "##vso[task.setvariable variable=VERSION]$VERSION"
+      echo "Versión: $VERSION"
+    displayName: Leer la versión
+
+  - task: Docker@2
+    displayName: Construir la imagen de la API
+    inputs:
+      containerRegistry: ${{ parameters.registro }}
+      repository: api
+      command: build
+      Dockerfile: packages/api/Dockerfile
+      buildContext: .
+      tags: |
+        $(VERSION)
+        $(Build.SourceVersion)
+
+  - script: |
+      set -e
+      curl -fsSL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+        | sh -s -- -b /usr/local/bin v0.58.1
+      trivy --version
+    displayName: Trivy
+
+  - script: |
+      set -e
+      IMAGEN="${{ parameters.servidor }}/api:$(Build.SourceVersion)"
+      trivy image --scanners vuln --ignore-unfixed \
+        --severity HIGH,CRITICAL --exit-code 1 --no-progress "$IMAGEN"
+    displayName: Vulnerabilidades de la imagen
+
+  - script: |
+      set -e
+      IMAGEN="${{ parameters.servidor }}/api:$(Build.SourceVersion)"
+      trivy image --format cyclonedx --no-progress \
+        --output $(Build.ArtifactStagingDirectory)/sbom-api.cdx.json "$IMAGEN"
+    displayName: Inventario de componentes
+    condition: succeededOrFailed()
+
+  - task: Docker@2
+    displayName: Publicar la imagen verificada
+    inputs:
+      containerRegistry: ${{ parameters.registro }}
+      repository: api
+      command: push
+      tags: |
+        $(VERSION)
+        $(Build.SourceVersion)
+
+  - publish: $(Build.ArtifactStagingDirectory)
+    artifact: empaquetado
+    displayName: Publicar el inventario
+    condition: succeededOrFailed()

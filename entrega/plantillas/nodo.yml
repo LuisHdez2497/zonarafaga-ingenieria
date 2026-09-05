@@ -1,0 +1,24 @@
+# Node y pnpm con la caché del almacén de paquetes. En un agente efímero cada
+# corrida arranca en frío, así que la caché es lo que separa dos minutos de seis.
+steps:
+  - template: toolchain.yml
+
+  - task: NodeTool@0
+    displayName: Node $(versionNode)
+    inputs:
+      versionSpec: $(versionNode).x
+
+  - script: |
+      set -e
+      corepack enable
+      corepack prepare pnpm@$(versionPnpm) --activate
+      ALMACEN=`pnpm store path --silent`
+      echo "##vso[task.setvariable variable=almacenPnpm]$ALMACEN"
+    displayName: pnpm
+
+  - task: Cache@2
+    displayName: Caché de paquetes
+    inputs:
+      key: 'pnpm | "$(Agent.OS)" | pnpm-lock.yaml'
+      restoreKeys: 'pnpm | "$(Agent.OS)"'
+      path: $(almacenPnpm)

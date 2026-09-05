@@ -1,0 +1,12 @@
+# Publica las versiones de `.toolchain` como variables del pipeline. Se incluye
+# antes que cualquier caché, porque las llaves de caché las usan.
+steps:
+  - script: |
+      set -e
+      set -a; . ./.toolchain; set +a
+      echo "##vso[task.setvariable variable=versionNode]$NODE_VERSION"
+      echo "##vso[task.setvariable variable=versionPnpm]$PNPM_VERSION"
+      echo "##vso[task.setvariable variable=versionFlutter]$FLUTTER_VERSION"
+      echo "##vso[task.setvariable variable=versionTerraform]$TERRAFORM_VERSION"
+      echo "Node $NODE_VERSION · pnpm $PNPM_VERSION · Flutter $FLUTTER_VERSION · Terraform $TERRAFORM_VERSION"
+    displayName: Versiones del toolchain

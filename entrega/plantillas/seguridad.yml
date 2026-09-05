@@ -1,0 +1,33 @@
+# Análisis estático y cadena de suministro. Cualquier hallazgo detiene la entrega.
+# No corre `pnpm install`: semgrep lee el código y `pnpm audit` lee el lockfile.
+steps:
+  - template: nodo.yml
+
+  - script: |
+      set -e
+      python3 -m pip install --quiet --disable-pip-version-check --break-system-packages semgrep
+      semgrep scan --config p/typescript --config p/javascript --config p/secrets \
+        --error --metrics=off packages/
+    displayName: Análisis estático del código
+
+  - script: pnpm audit --prod --audit-level=high
+    displayName: Dependencias vulnerables
+
+  # Una plantilla que compila no es una plantilla segura. Checkov lee la
+  # infraestructura declarada y falla ante cualquier hallazgo que no lleve una
+  # supresión con su motivo escrito junto al recurso.
+  - script: |
+      set -e
+      python3 -m pip install --quiet --disable-pip-version-check --break-system-packages checkov
+      checkov --directory infra --framework terraform --compact \
+        --output cli --output junitxml --output-file-path console,$(Build.ArtifactStagingDirectory)/checkov.xml
+    displayName: Análisis estático de la infraestructura
+
+  - task: PublishTestResults@2
+    displayName: Publicar hallazgos de infraestructura
+    condition: succeededOrFailed()
+    inputs:
+      testResultsFormat: JUnit
+      testResultsFiles: $(Build.ArtifactStagingDirectory)/checkov.xml
+      testRunTitle: Infraestructura (Checkov)
+      failTaskOnFailedTests: false

@@ -1,0 +1,108 @@
+# Integración continua de ZonaRafaga.
+#
+# Corre en agentes efímeros de Microsoft: cada etapa arranca en una máquina
+# limpia y se destruye al terminar. Así ninguna computadora del equipo es
+# requisito para entregar, y lo que pasa en CI no depende de lo que alguien
+# tenga instalado. El precio es que el toolchain se declara aquí, versión por
+# versión, y se apoya en caché.
+#
+# Ninguna etapa aplica infraestructura ni despliega. Ver la regla 31.
+
+name: $(Date:yyyyMMdd)$(Rev:.r)
+
+trigger:
+  branches:
+    include: [dev, qa, main]
+
+pr:
+  branches:
+    include: [dev, qa, main]
+
+pool:
+  vmImage: ubuntu-24.04
+
+variables:
+  # Interruptor del plan de infraestructura. Vacío mientras no exista la cuenta de
+  # almacenamiento del estado ni una conexión de servicio con la que autenticarse:
+  # `terraform plan` necesita las dos y sin ellas no puede correr. Se declara aquí
+  # -- aunque su valor se fije en la definición del pipeline -- porque una condición
+  # que apunta a una variable que no está escrita en ningún lado es una condición
+  # que nadie sabe que existe. Ver la plantilla de infraestructura.
+  - name: ESTADO_REMOTO
+    value: ''
+  # Interruptor del empaquetado. Vacío mientras no exista el registro de imágenes
+  # ni su conexión de servicio. A diferencia de ESTADO_REMOTO -- que gobierna un
+  # paso en ejecución y por eso admite una variable de la definición --, este se
+  # lee al COMPILAR y vive aquí: encender el empaquetado es una decisión
+  # versionada, y va junto al nombre del registro al que publica.
+  - name: REGISTRO_HABILITADO
+    value: ''
+  - name: baseAfectada
+    ${{ if eq(variables['Build.Reason'], 'PullRequest') }}:
+      value: origin/$(System.PullRequest.TargetBranch)
+    ${{ else }}:
+      value: HEAD~1
+  - name: ambienteInfra
+    ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+      value: prod
+    ${{ elseif eq(variables['Build.SourceBranchName'], 'qa') }}:
+      value: qa
+    ${{ else }}:
+      value: dev
+
+stages:
+  - stage: Calidad
+    displayName: Calidad
+    jobs:
+      - job: gates
+        displayName: Gates afectados
+        timeoutInMinutes: 55
+        steps:
+          - checkout: self
+            fetchDepth: 0
+          - template: plantillas/calidad.yml
+            parameters:
+              base: $(baseAfectada)
+
+  - stage: Seguridad
+    displayName: Seguridad
+    dependsOn: Calidad
+    jobs:
+      - job: sast
+        displayName: Estático y dependencias
+        timeoutInMinutes: 55
+        steps:
+          - template: plantillas/seguridad.yml
+
+  - stage: Infraestructura
+    displayName: Infraestructura
+    dependsOn: Calidad
+    jobs:
+      - job: terraform
+        displayName: Validar y planificar
+        timeoutInMinutes: 55
+        steps:
+          - template: plantillas/infraestructura.yml
+            parameters:
+              ambiente: $(ambienteInfra)
+
+  # Azure valida las conexiones de servicio de TODAS las etapas al compilar, sin
+  # mirar sus condiciones de ejecución. Así que una etapa apagada con `condition:`
+  # igual tumba la corrida entera si su conexión no existe -- y la tumba antes de
+  # pedir agente, con lo que ni las etapas que sí podían correr llegan a arrancar.
+  # Por eso el interruptor es de compilación: lo que no se va a ejecutar, no se
+  # compila.
+  - ${{ if ne(variables.REGISTRO_HABILITADO, '') }}:
+      - stage: Empaquetado
+        displayName: Empaquetado
+        dependsOn: [Seguridad, Infraestructura]
+        condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+        jobs:
+          - job: imagen
+            displayName: Imagen por versión
+            timeoutInMinutes: 55
+            steps:
+              - template: plantillas/empaquetado.yml
+                parameters:
+                  registro: zrregistro
+                  servidor: zrregistro.azurecr.io
