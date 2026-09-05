@@ -41,7 +41,7 @@ variables:
     value: ''
   - name: baseAfectada
     ${{ if eq(variables['Build.Reason'], 'PullRequest') }}:
-      value: origin/$(System.PullRequest.TargetBranch)
+      value: $(System.PullRequest.TargetBranch)
     ${{ else }}:
       value: HEAD~1
   - name: ambienteInfra
