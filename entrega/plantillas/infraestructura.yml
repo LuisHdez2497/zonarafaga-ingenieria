@@ -10,7 +10,7 @@ steps:
   - task: Cache@2
     displayName: Caché de Terraform
     inputs:
-      key: 'terraform | "$(Agent.OS)" | $(versionTerraform)'
+      key: 'terraform | "$(Agent.OS)" | "$(versionTerraform)"'
       path: $(Agent.ToolsDirectory)/terraform
 
   - script: |

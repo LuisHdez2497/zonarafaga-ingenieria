@@ -26,7 +26,7 @@ steps:
   - task: Cache@2
     displayName: Caché del SDK de Flutter
     inputs:
-      key: 'flutter | "$(Agent.OS)" | $(versionFlutter)'
+      key: 'flutter | "$(Agent.OS)" | "$(versionFlutter)"'
       path: $(Agent.ToolsDirectory)/flutter
 
   - script: |
@@ -48,6 +48,7 @@ steps:
       cd apps
       dart pub get
       dart format --set-exit-if-changed .
+      cd staff_app && dart run build_runner build --delete-conflicting-outputs && cd ..
       flutter analyze --fatal-infos --fatal-warnings
     displayName: Gates de Flutter
 

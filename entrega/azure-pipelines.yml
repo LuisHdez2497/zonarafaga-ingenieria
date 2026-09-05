@@ -10,9 +10,11 @@
 
 name: $(Date:yyyyMMdd)$(Rev:.r)
 
-trigger:
-  branches:
-    include: [dev, qa, main]
+# Solo corre por Pull Request: al integrar trabajo en `dev` y al promover a `qa`
+# y a `main`. El push no dispara nada, porque mezclar un PR ya validado a su rama
+# destino volvería a correr lo mismo sobre el mismo árbol: el doble de minutos
+# para la misma respuesta. Ver la regla 36.
+trigger: none
 
 pr:
   branches:
