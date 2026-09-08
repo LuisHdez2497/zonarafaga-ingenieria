@@ -86,13 +86,12 @@ steps:
     env:
       # ─── Retirado de la copia pública ────────────────────────────────────────
       #
-      # Aquí van las variables de entorno que el grafo de Nest valida al arrancar:
-      # la conexión a la base del contenedor de servicio, y los secretos generados
-      # en el paso anterior con `openssl rand`.
+      # Aquí van las variables que el grafo de Nest valida al arrancar: la conexión
+      # a los contenedores de servicio y los secretos generados con `openssl rand`.
       #
-      # **La lista concreta no se publica.** No son secretos —los valores nacen y
-      # mueren con el agente— pero sus nombres describen la superficie de
-      # configuración del producto, y eso es diseño, no práctica de ingeniería.
+      # **La lista concreta no se publica.** No son secretos —nacen y mueren con el
+      # agente— pero sus nombres describen la superficie de configuración del
+      # producto, y eso es diseño, no práctica de ingeniería.
       #
       # Se dice aquí en vez de borrar el paso, porque un artefacto recortado sin
-      # avisar deja de ser evidencia: quien lo lea tiene derecho a saber qué falta.
+      # avisar deja de ser evidencia.

@@ -41,6 +41,12 @@ resources:
         POSTGRES_USER: postgres
         POSTGRES_PASSWORD: postgres
         POSTGRES_DB: app
+    # El API habla con Redis, y el grafo de Nest lo conecta al arrancar: sin el
+    # contenedor, las pruebas de integracion no pasan de la primera.
+    - container: redis
+      image: redis:7-alpine
+      ports:
+        - '6379:6379'
 
 variables:
   # Interruptor de compilación del empaquetado. Vacío mientras no exista el
@@ -70,6 +76,7 @@ stages:
         timeoutInMinutes: 55
         services:
           postgres: postgres
+          redis: redis
         steps:
           - checkout: self
             # Sin historia completa no hay contra qué comparar, y el verificador
