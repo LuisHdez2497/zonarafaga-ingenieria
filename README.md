@@ -14,6 +14,11 @@ entrega ese producto. No es el producto.
 >
 > Lo que sí está aquí son las decisiones de plataforma, la infraestructura como código y la cadena de
 > entrega: la parte del trabajo que se puede enseñar sin regalar el producto.
+>
+> Y hay **una omisión declarada**: la plantilla de verificación lleva el paso que pasa el entorno al
+> arranque del grafo, pero **no la lista de variables**. No son secretos —se generan en el agente y mueren
+> con él— pero sus nombres describen la superficie de configuración del producto. El hueco está marcado
+> dentro del propio archivo, porque un artefacto recortado sin avisar deja de ser evidencia.
 
 ---
 
