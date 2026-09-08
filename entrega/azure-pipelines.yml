@@ -1,42 +1,56 @@
 # Integración continua de ZonaRafaga.
 #
-# Corre en agentes efímeros de Microsoft: cada etapa arranca en una máquina
-# limpia y se destruye al terminar. Así ninguna computadora del equipo es
-# requisito para entregar, y lo que pasa en CI no depende de lo que alguien
-# tenga instalado. El precio es que el toolchain se declara aquí, versión por
-# versión, y se apoya en caché.
+# Corre en agentes efímeros de Microsoft: cada etapa arranca en una máquina limpia
+# y se destruye al terminar. Así ninguna computadora del equipo es requisito para
+# entregar, y lo que pasa en CI no depende de lo que alguien tenga instalado. El
+# precio es que el toolchain se declara en `.toolchain`, versión por versión.
 #
-# Ninguna etapa aplica infraestructura ni despliega. Ver la regla 31.
+# No repite la lista de gates: llama a `tools/verificar.mjs`, el mismo script que
+# se corre antes de commitear. Local y CI no pueden divergir porque son el mismo
+# código.
+#
+# **Ninguna etapa despliega.** Este proyecto no tiene ambientes: `dev`, `qa` y
+# `main` son ramas de integración y verificación, no destinos.
 
 name: $(Date:yyyyMMdd)$(Rev:.r)
 
-# Solo corre por Pull Request: al integrar trabajo en `dev` y al promover a `qa`
-# y a `main`. El push no dispara nada, porque mezclar un PR ya validado a su rama
-# destino volvería a correr lo mismo sobre el mismo árbol: el doble de minutos
-# para la misma respuesta. Ver la regla 36.
+# El push no dispara nada. No hay nada que publicar, y mezclar un Pull Request ya
+# validado a su rama destino volvería a correr lo mismo sobre el mismo árbol: el
+# doble de minutos para la misma respuesta.
 trigger: none
 
-pr:
-  branches:
-    include: [dev, qa, main]
+# En Azure Repos el bloque `pr:` **se ignora**: lo que encola la validación de un
+# Pull Request es la política de compilación de la rama destino, configurada en el
+# repositorio. Se deja explícito en `none` porque es lo que la documentación de
+# Microsoft recomienda cuando la validación la gobierna la política.
+#
+# Consecuencia práctica: **el filtro de ruta de los Pull Requests también vive en
+# esa política**, no en este archivo.
+pr: none
 
 pool:
   vmImage: ubuntu-24.04
 
+resources:
+  containers:
+    - container: postgres
+      image: postgres:17-alpine
+      ports:
+        - '5432:5432'
+      env:
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_DB: app
+
 variables:
-  # Interruptor del plan de infraestructura. Vacío mientras no exista la cuenta de
-  # almacenamiento del estado ni una conexión de servicio con la que autenticarse:
-  # `terraform plan` necesita las dos y sin ellas no puede correr. Se declara aquí
-  # -- aunque su valor se fije en la definición del pipeline -- porque una condición
-  # que apunta a una variable que no está escrita en ningún lado es una condición
-  # que nadie sabe que existe. Ver la plantilla de infraestructura.
-  - name: ESTADO_REMOTO
-    value: ''
-  # Interruptor del empaquetado. Vacío mientras no exista el registro de imágenes
-  # ni su conexión de servicio. A diferencia de ESTADO_REMOTO -- que gobierna un
-  # paso en ejecución y por eso admite una variable de la definición --, este se
-  # lee al COMPILAR y vive aquí: encender el empaquetado es una decisión
-  # versionada, y va junto al nombre del registro al que publica.
+  # Interruptor de compilación del empaquetado. Vacío mientras no exista el
+  # registro de imágenes ni su conexión de servicio.
+  #
+  # Tiene que ser de COMPILACIÓN y no una condición de ejecución, porque **Azure
+  # valida las conexiones de servicio y los archivos seguros de TODAS las etapas al
+  # compilar, sin mirar sus condiciones**. Una etapa apagada con `condition:` tumba
+  # igual la corrida entera si su conexión no existe -- y la tumba antes de pedir
+  # agente, así que ni la verificación llega a arrancar.
   - name: REGISTRO_HABILITADO
     value: ''
   - name: baseAfectada
@@ -44,80 +58,38 @@ variables:
       value: $(System.PullRequest.TargetBranch)
     ${{ else }}:
       value: HEAD~1
-  - name: ambienteInfra
-    ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
-      value: prod
-    ${{ elseif eq(variables['Build.SourceBranchName'], 'qa') }}:
-      value: qa
-    ${{ else }}:
-      value: dev
 
 stages:
-  - stage: Calidad
-    displayName: Calidad
+  - stage: Verificacion
+    displayName: Verificación
     jobs:
       - job: gates
-        displayName: Gates afectados
+        displayName: Gates (el mismo script que en local)
+        # El nivel gratuito corta un trabajo a los 60 minutos, así que 55 es el
+        # techo útil: por encima, el agente lo mata sin dejar reporte.
         timeoutInMinutes: 55
+        services:
+          postgres: postgres
         steps:
           - checkout: self
+            # Sin historia completa no hay contra qué comparar, y el verificador
+            # cae a «no se pudo comparar», que enciende todas las fases.
             fetchDepth: 0
-          - template: plantillas/calidad.yml
+          - template: .pipelines/plantillas/verificacion.yml
             parameters:
               base: $(baseAfectada)
 
-  - stage: Seguridad
-    displayName: Seguridad
-    dependsOn: Calidad
-    condition: |
-      and(succeeded(),
-          or(ne(dependencies.Calidad.outputs['gates.alcance.hayPaquetes'], 'false'),
-             ne(dependencies.Calidad.outputs['gates.alcance.hayInfra'], 'false')))
-    jobs:
-      - job: sast
-        displayName: Estático y dependencias
-        timeoutInMinutes: 55
-        variables:
-          analizarCodigo: $[ stageDependencies.Calidad.gates.outputs['alcance.hayPaquetes'] ]
-          analizarInfra: $[ stageDependencies.Calidad.gates.outputs['alcance.hayInfra'] ]
-        steps:
-          - template: plantillas/seguridad.yml
-            parameters:
-              analizarCodigo: $(analizarCodigo)
-              analizarInfra: $(analizarInfra)
-
-  - stage: Infraestructura
-    displayName: Infraestructura
-    dependsOn: Calidad
-    condition: |
-      and(succeeded(),
-          ne(dependencies.Calidad.outputs['gates.alcance.hayInfra'], 'false'))
-    jobs:
-      - job: terraform
-        displayName: Validar y planificar
-        timeoutInMinutes: 55
-        steps:
-          - template: plantillas/infraestructura.yml
-            parameters:
-              ambiente: $(ambienteInfra)
-
-  # Azure valida las conexiones de servicio de TODAS las etapas al compilar, sin
-  # mirar sus condiciones de ejecución. Así que una etapa apagada con `condition:`
-  # igual tumba la corrida entera si su conexión no existe -- y la tumba antes de
-  # pedir agente, con lo que ni las etapas que sí podían correr llegan a arrancar.
-  # Por eso el interruptor es de compilación: lo que no se va a ejecutar, no se
-  # compila.
   - ${{ if ne(variables.REGISTRO_HABILITADO, '') }}:
       - stage: Empaquetado
         displayName: Empaquetado
-        dependsOn: [Seguridad, Infraestructura]
+        dependsOn: Verificacion
         condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
         jobs:
           - job: imagen
             displayName: Imagen por versión
             timeoutInMinutes: 55
             steps:
-              - template: plantillas/empaquetado.yml
+              - template: .pipelines/plantillas/empaquetado.yml
                 parameters:
                   registro: zrregistro
                   servidor: zrregistro.azurecr.io

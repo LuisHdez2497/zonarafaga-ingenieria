@@ -5,3 +5,8 @@ NODE_VERSION=24
 PNPM_VERSION=10.12.2
 FLUTTER_VERSION=3.44.9
 TERRAFORM_VERSION=1.16.1
+# Semgrep y Checkov se fijan porque `latest` cambia sus reglas sin que nada lo
+# diga: una corrida verde de ayer y una roja de hoy sobre el mismo arbol no se
+# distinguen de una regresion. Se suben a proposito, en un commit.
+SEMGREP_VERSION=1.169.0
+CHECKOV_VERSION=3.3.16
